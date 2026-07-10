@@ -40,6 +40,24 @@ For directories:
 covername process <directory> --recursive --auto-accept
 ```
 
+### Structured output (--json)
+
+```bash
+covername --json scan <file>
+covername --json process <file> --auto-accept
+covername --json mappings list
+```
+
+Returns machine-parseable JSON. Ideal for agent integration — parse the output directly without regex.
+
+### Quiet mode (--quiet)
+
+```bash
+covername --quiet process <file> --auto-accept
+```
+
+Suppresses progress bars and informational output. Only errors (stderr) and results are emitted. Combine with `--json` for clean structured output with no noise.
+
 ### Check mappings
 
 ```bash

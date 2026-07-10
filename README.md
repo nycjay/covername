@@ -197,21 +197,22 @@ Phase 3 (Desktop app) — complete:
 - [x] macOS .app and .dmg builds
 
 Remaining:
-- [ ] `--quiet` and `--json` CLI flags for automation
 - [ ] MCP server for AI agent integration
 - [ ] Auto-updater
 
 ## AI Agent Integration
 
-Covername can be used by AI agents (Claude, ChatGPT, Kiro, etc.) to anonymize documents before analysis. Use the `--auto-accept` flag for non-interactive processing:
+Covername can be used by AI agents (Claude, ChatGPT, Kiro, etc.) to anonymize documents before analysis. Use `--auto-accept` for non-interactive processing and `--json` for structured output:
 
 ```bash
-# Agent anonymizes a document before working with it
-covername process document.pdf --auto-accept
-# → produces document-covered.pdf with all PII replaced
+# Scan and get structured results
+covername --json scan document.pdf
 
-# Agent reads the clean version
-cat document-covered.txt
+# Process without interactive review, structured output
+covername --json --quiet process document.pdf --auto-accept
+
+# Quiet mode: suppress all informational output, only errors
+covername --quiet process ~/Documents/ --recursive --auto-accept
 ```
 
 See [docs/AGENT-SKILL.md](docs/AGENT-SKILL.md) for the full agent skill specification, including typical workflows, supported PII types, and configuration.

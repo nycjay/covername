@@ -18,6 +18,12 @@ use covername_core::replacement;
 use covername_core::smart_detection;
 use tracing::info;
 
+/// Controls how the CLI renders output.
+struct OutputOptions {
+    quiet: bool,
+    json: bool,
+}
+
 /// A local-first document anonymization tool.
 ///
 /// Detects PII in documents and replaces it with consistent
@@ -25,6 +31,14 @@ use tracing::info;
 #[derive(Parser)]
 #[command(name = "covername", version, about)]
 struct Cli {
+    /// Suppress progress bars and informational output. Only errors and results are printed.
+    #[arg(long, short, global = true, default_value_t = false)]
+    quiet: bool,
+
+    /// Output results as JSON. Useful for scripting and AI agent integration.
+    #[arg(long, global = true, default_value_t = false)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -296,7 +310,7 @@ fn handle_config(action: ConfigAction) -> Result<()> {
     Ok(())
 }
 
-fn handle_mappings(action: MappingsAction) -> Result<()> {
+fn handle_mappings(action: MappingsAction, opts: &OutputOptions) -> Result<()> {
     let path = mappings_path()?;
 
     match action {
@@ -304,8 +318,23 @@ fn handle_mappings(action: MappingsAction) -> Result<()> {
             let store = MappingStore::load(&path).context("failed to load mappings")?;
             let mappings = store.list();
 
-            if mappings.is_empty() {
-                println!("No mappings stored.");
+            if opts.json {
+                let json_mappings: Vec<serde_json::Value> = mappings
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "original": m.original,
+                            "replacement": m.replacement,
+                            "entity_type": m.entity_type,
+                            "last_used": m.last_used.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&json_mappings)?);
+            } else if mappings.is_empty() {
+                if !opts.quiet {
+                    println!("No mappings stored.");
+                }
             } else {
                 println!(
                     "{:<30} {:<30} {:<15} LAST USED",
@@ -534,7 +563,7 @@ fn run_detection(text: &str, storage_dir: &std::path::Path) -> Result<Vec<Detect
     covername_core::pipeline::detect_pii(text, storage_dir).context("failed to run PII detection")
 }
 
-fn handle_scan(path: PathBuf, recursive: bool) -> Result<()> {
+fn handle_scan(path: PathBuf, recursive: bool, opts: &OutputOptions) -> Result<()> {
     info!(path = %path.display(), recursive, "scanning path");
     validate_input_path(&path)?;
 
@@ -542,7 +571,11 @@ fn handle_scan(path: PathBuf, recursive: bool) -> Result<()> {
         .context(format!("failed to collect files from {}", path.display()))?;
 
     if files.is_empty() {
-        println!("No supported files found in {}.", path.display());
+        if opts.json {
+            println!("[]");
+        } else if !opts.quiet {
+            println!("No supported files found in {}.", path.display());
+        }
         return Ok(());
     }
 
@@ -560,6 +593,9 @@ fn handle_scan(path: PathBuf, recursive: bool) -> Result<()> {
         }
     };
 
+    // Collect all results for JSON output
+    let mut all_results: Vec<serde_json::Value> = Vec::new();
+
     for file in &files {
         let text = match extract_text(file) {
             Ok(t) => t,
@@ -575,28 +611,51 @@ fn handle_scan(path: PathBuf, recursive: bool) -> Result<()> {
             .filter(|d| !ignore_list.is_ignored(&d.matched_text))
             .collect();
 
-        if is_batch {
-            println!(
-                "=== {} ({} detection(s)) ===",
-                file.display(),
-                detections.len()
-            );
-        } else if detections.is_empty() {
-            println!("No PII detected in {}.", file.display());
-            return Ok(());
-        } else {
-            println!(
-                "Found {} detection(s) in {}:\n",
-                detections.len(),
-                file.display()
-            );
-        }
+        if opts.json {
+            let file_result = serde_json::json!({
+                "file": file.display().to_string(),
+                "detections": detections.iter().map(|d| serde_json::json!({
+                    "entity_type": d.entity_type,
+                    "matched_text": d.matched_text,
+                    "rule_name": d.rule_name,
+                    "start": d.start,
+                    "end": d.end,
+                    "context": d.context,
+                })).collect::<Vec<_>>()
+            });
+            all_results.push(file_result);
+        } else if !opts.quiet {
+            if is_batch {
+                println!(
+                    "=== {} ({} detection(s)) ===",
+                    file.display(),
+                    detections.len()
+                );
+            } else if detections.is_empty() {
+                println!("No PII detected in {}.", file.display());
+                return Ok(());
+            } else {
+                println!(
+                    "Found {} detection(s) in {}:\n",
+                    detections.len(),
+                    file.display()
+                );
+            }
 
-        for (i, d) in detections.iter().enumerate() {
-            println!("  {}. [{}] \"{}\"", i + 1, d.entity_type, d.matched_text);
-            println!("     Rule: {}", d.rule_name);
-            println!("     Position: {}..{}", d.start, d.end);
-            println!("     Context: {}\n", d.context);
+            for (i, d) in detections.iter().enumerate() {
+                println!("  {}. [{}] \"{}\"", i + 1, d.entity_type, d.matched_text);
+                println!("     Rule: {}", d.rule_name);
+                println!("     Position: {}..{}", d.start, d.end);
+                println!("     Context: {}\n", d.context);
+            }
+        }
+    }
+
+    if opts.json {
+        if is_batch {
+            println!("{}", serde_json::to_string_pretty(&all_results)?);
+        } else if let Some(result) = all_results.first() {
+            println!("{}", serde_json::to_string_pretty(result)?);
         }
     }
 
@@ -610,7 +669,12 @@ struct FileDetections {
     detections: Vec<Detection>,
 }
 
-fn handle_process(path: PathBuf, recursive: bool, auto_accept: bool) -> Result<()> {
+fn handle_process(
+    path: PathBuf,
+    recursive: bool,
+    auto_accept: bool,
+    opts: &OutputOptions,
+) -> Result<()> {
     info!(path = %path.display(), recursive, auto_accept, "processing path");
     validate_input_path(&path)?;
 
@@ -629,7 +693,7 @@ fn handle_process(path: PathBuf, recursive: bool, auto_accept: bool) -> Result<(
     let is_batch = files.len() > 1;
     let mut file_detections: Vec<FileDetections> = Vec::new();
     for (file_idx, file) in files.iter().enumerate() {
-        if is_batch {
+        if is_batch && !opts.quiet {
             println!(
                 "\n[{}/{}] Scanning {}",
                 file_idx + 1,
@@ -971,21 +1035,29 @@ fn handle_process(path: PathBuf, recursive: bool, auto_accept: bool) -> Result<(
     }
 
     // Phase 5: Print summary
-    if is_batch {
-        println!("Batch Summary:");
-        println!("  Files processed: {}", file_detections.len());
-        println!("  Total detections: {total_detections}");
-        println!("  Accepted: {total_accepted}");
-        if output_files.is_empty() {
-            println!("  No output files generated.");
-        } else {
-            println!("  Output files:");
-            for f in &output_files {
-                println!("    - {}", f.display());
+    if opts.json {
+        let result = serde_json::json!({
+            "files_processed": file_detections.len(),
+            "total_detections": total_detections,
+            "accepted": total_accepted,
+            "output_files": output_files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else if !opts.quiet {
+        if is_batch {
+            println!("Batch Summary:");
+            println!("  Files processed: {}", file_detections.len());
+            println!("  Total detections: {total_detections}");
+            println!("  Accepted: {total_accepted}");
+            if output_files.is_empty() {
+                println!("  No output files generated.");
+            } else {
+                println!("  Output files:");
+                for f in &output_files {
+                    println!("    - {}", f.display());
+                }
             }
-        }
-    } else {
-        if output_files.is_empty() {
+        } else if output_files.is_empty() {
             println!("No replacements accepted. No output file written.");
         } else {
             println!("Summary:");
@@ -1162,19 +1234,23 @@ fn main() -> Result<()> {
     info!("covername starting");
 
     let cli = Cli::parse();
+    let output_opts = OutputOptions {
+        quiet: cli.quiet,
+        json: cli.json,
+    };
 
     match cli.command {
         Commands::Config { action } => handle_config(action),
-        Commands::Mappings { action } => handle_mappings(action),
+        Commands::Mappings { action } => handle_mappings(action, &output_opts),
         Commands::Rules { action } => handle_rules(action),
         Commands::Model { action } => handle_model(action),
         Commands::Ignore { action } => handle_ignore(action),
         Commands::SmartDetection { action } => handle_smart_detection(action),
-        Commands::Scan { path, recursive } => handle_scan(path, recursive),
+        Commands::Scan { path, recursive } => handle_scan(path, recursive, &output_opts),
         Commands::Process {
             path,
             recursive,
             auto_accept,
-        } => handle_process(path, recursive, auto_accept),
+        } => handle_process(path, recursive, auto_accept, &output_opts),
     }
 }
