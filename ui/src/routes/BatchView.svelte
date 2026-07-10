@@ -87,7 +87,7 @@
       <div class="file-list">
         {#each files as file}
           <div class="file-item">
-            <span class="file-icon">📄</span>
+            <span class="file-icon"></span>
             <span class="file-name">{filename(file)}</span>
           </div>
         {/each}
@@ -107,13 +107,13 @@
       <!-- Results after processing -->
       <div class="batch-summary">
         {#if successCount > 0}
-          <span class="summary-success">✅ {successCount} processed</span>
+          <span class="summary-success">{successCount} processed</span>
         {/if}
         {#if skippedCount > 0}
-          <span class="summary-skipped">⏭ {skippedCount} skipped (no PII found)</span>
+          <span class="summary-skipped">{skippedCount} skipped (no PII found)</span>
         {/if}
         {#if errorCount > 0}
-          <span class="summary-error">❌ {errorCount} failed</span>
+          <span class="summary-error">{errorCount} failed</span>
         {/if}
       </div>
 
@@ -121,7 +121,7 @@
         {#each results as result}
           <div class="file-item" class:success={result.status === "success"} class:error={result.status === "error"} class:skipped={result.status === "skipped"}>
             <span class="file-status">
-              {#if result.status === "success"}✅{:else if result.status === "error"}❌{:else}⏭{/if}
+              {#if result.status === "success"}•{:else if result.status === "error"}✗{:else}—{/if}
             </span>
             <div class="file-details">
               <span class="file-name">{filename(result.path)}</span>

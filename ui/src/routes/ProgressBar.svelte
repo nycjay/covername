@@ -15,13 +15,6 @@
 <div class="progress-container" role="progressbar" aria-valuenow={indeterminate ? undefined : percent} aria-valuemin={0} aria-valuemax={100}>
   <div class="progress-header">
     <span class="progress-label">
-      {#if phase === "scan"}
-        🔍
-      {:else if phase === "generate"}
-        📝
-      {:else}
-        ✅
-      {/if}
       {message}
     </span>
     {#if !indeterminate}

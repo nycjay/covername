@@ -646,6 +646,16 @@ fn uninstall(remove_models: bool) -> Result<String, String> {
     Ok(removed.join("\n"))
 }
 
+/// Reveal a file in Finder (macOS).
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .args(["-R", &path])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Gather debug information into a zip file on the Desktop.
 ///
 /// Includes: system info, config, log files, model status.
@@ -815,6 +825,7 @@ fn main() {
             is_first_run,
             complete_onboarding,
             gather_debug_logs,
+            reveal_in_finder,
             get_app_info,
             get_config,
             get_mappings,

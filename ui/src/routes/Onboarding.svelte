@@ -73,15 +73,15 @@
       <h2>Your privacy</h2>
       <div class="privacy-points">
         <div class="privacy-item">
-          <span class="privacy-icon">🔒</span>
+          <span class="privacy-icon">•</span>
           <p><strong>100% local.</strong> Your documents never leave this computer. Nothing is uploaded anywhere.</p>
         </div>
         <div class="privacy-item">
-          <span class="privacy-icon">📁</span>
+          <span class="privacy-icon">•</span>
           <p><strong>Data stored at:</strong> <code>~/.config/covername/</code> — config, mappings, and optional AI models.</p>
         </div>
         <div class="privacy-item">
-          <span class="privacy-icon">🗑️</span>
+          <span class="privacy-icon">•</span>
           <p><strong>Easy to remove.</strong> Help → Uninstall removes everything cleanly.</p>
         </div>
       </div>

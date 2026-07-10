@@ -20,7 +20,7 @@
 {#if visible}
   <div class="toast toast-{type}" role="alert">
     <span class="toast-icon">
-      {#if type === "success"}✅{:else if type === "error"}❌{:else}ℹ️{/if}
+      {#if type === "success"}✓{:else if type === "error"}✗{:else}i{/if}
     </span>
     <span class="toast-message">{message}</span>
     <button class="toast-dismiss" onclick={onDismiss} aria-label="Dismiss">×</button>

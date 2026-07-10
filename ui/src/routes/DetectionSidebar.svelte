@@ -12,14 +12,16 @@
   interface Props {
     detections: Detection[];
     generating?: boolean;
+    outputReady?: boolean;
     onAccept: (index: number) => void;
     onReject: (index: number) => void;
     onEdit: (index: number, replacement: string) => void;
     onAcceptAll: () => void;
     onGenerate: () => void;
+    onReveal?: () => void;
   }
 
-  let { detections, generating = false, onAccept, onReject, onEdit, onAcceptAll, onGenerate }: Props = $props();
+  let { detections, generating = false, outputReady = false, onAccept, onReject, onEdit, onAcceptAll, onGenerate, onReveal }: Props = $props();
   let editingIndex = $state<number | null>(null);
   let editValue = $state("");
 
@@ -120,6 +122,11 @@
         {:else}
           Generate Output ({acceptedCount} replacements)
         {/if}
+      </button>
+    {/if}
+    {#if outputReady && onReveal}
+      <button class="btn-reveal" onclick={onReveal}>
+        Reveal in Finder
       </button>
     {/if}
   </div>
@@ -283,4 +290,23 @@
   }
 
   .btn-generate:hover { background: var(--color-neutral-800); }
+
+  .btn-reveal {
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    margin-top: var(--space-2);
+    transition: background 0.1s;
+  }
+
+  .btn-reveal:hover {
+    background: var(--color-primary-500);
+    color: white;
+    border-color: var(--color-primary-500);
+  }
 </style>

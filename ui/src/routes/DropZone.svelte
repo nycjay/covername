@@ -103,21 +103,21 @@
   <!-- Capabilities -->
   <div class="capabilities">
     <div class="capability">
-      <div class="cap-icon">🔍</div>
+      <div class="cap-icon">Detect</div>
       <div class="cap-text">
         <strong>Detect</strong>
         <span>Finds names, addresses, SSNs, accounts, and more</span>
       </div>
     </div>
     <div class="capability">
-      <div class="cap-icon">🎭</div>
+      <div class="cap-icon">Replace</div>
       <div class="cap-text">
         <strong>Replace</strong>
         <span>Swaps PII with consistent, realistic cover identities</span>
       </div>
     </div>
     <div class="capability">
-      <div class="cap-icon">🔒</div>
+      <div class="cap-icon">Private</div>
       <div class="cap-text">
         <strong>Private</strong>
         <span>Everything stays on your computer — nothing is uploaded</span>

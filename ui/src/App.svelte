@@ -200,6 +200,8 @@
       toastMessage = `Debug logs saved to ${path.split('/').pop()}`;
       toastType = "success";
       toastVisible = true;
+      // Reveal the zip in Finder
+      await invoke("reveal_in_finder", { path });
     } catch (e) {
       toastMessage = `Failed to gather logs: ${e}`;
       toastType = "error";
@@ -225,9 +227,6 @@
 <main class="app-shell">
   <header class="toolbar">
     <div class="toolbar-left">
-      <img src={logoSvg} alt="" class="toolbar-logo" />
-      <span class="app-title">Covername</span>
-      <div class="toolbar-separator"></div>
       <button class="btn-toolbar" onclick={handleOpen} title="Open file (⌘O)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
@@ -359,7 +358,7 @@
     {:else}
       <span>Ready</span>
     {/if}
-    <span class="status-privacy">🔒 All processing is local</span>
+    <span class="status-privacy">All processing is local</span>
   </footer>
 
   <Toast message={toastMessage} type={toastType} visible={toastVisible} onDismiss={() => toastVisible = false} />

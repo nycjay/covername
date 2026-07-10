@@ -10,8 +10,17 @@
 
   let config = $state<Record<string, any>>({});
   let mappings = $state<any[]>([]);
-  let activeTab = $state<"config" | "mappings" | "rules" | "about">("config");
+  let activeTab = $state<"config" | "mappings" | "rules" | "storage" | "about">("config");
   let appInfo = $state<{ version: string; git_hash: string; is_dev: boolean } | null>(null);
+  let storage = $state<{ path: string; config_bytes: number; models_bytes: number; logs_bytes: number; total_bytes: number } | null>(null);
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
 
   onMount(async () => {
     try {
@@ -28,6 +37,11 @@
       appInfo = await invoke<{ version: string; git_hash: string; is_dev: boolean }>("get_app_info");
     } catch {
       appInfo = null;
+    }
+    try {
+      storage = await invoke("get_storage_usage");
+    } catch {
+      storage = null;
     }
   });
 </script>
@@ -49,6 +63,9 @@
       </button>
       <button class="tab" class:active={activeTab === 'rules'} onclick={() => activeTab = 'rules'}>
         Rules
+      </button>
+      <button class="tab" class:active={activeTab === 'storage'} onclick={() => activeTab = 'storage'}>
+        Storage
       </button>
       <button class="tab" class:active={activeTab === 'about'} onclick={() => activeTab = 'about'}>
         About
@@ -94,6 +111,34 @@
           <h3>Detection Rules</h3>
           <p class="hint">Built-in rules detect SSN, phone, email, credit cards, and account numbers.</p>
           <p class="hint">Add custom rules via CLI: <code>covername rules add --name "..." --pattern "..." --type ...</code></p>
+        </div>
+
+      {:else if activeTab === 'storage'}
+        <div class="section">
+          <h3>Storage Usage</h3>
+          {#if storage}
+            <div class="storage-breakdown">
+              <div class="storage-row">
+                <span class="storage-label">Configuration & mappings</span>
+                <span class="storage-value">{formatBytes(storage.config_bytes)}</span>
+              </div>
+              <div class="storage-row">
+                <span class="storage-label">AI models</span>
+                <span class="storage-value">{formatBytes(storage.models_bytes)}</span>
+              </div>
+              <div class="storage-row">
+                <span class="storage-label">Logs</span>
+                <span class="storage-value">{formatBytes(storage.logs_bytes)}</span>
+              </div>
+              <div class="storage-row storage-total">
+                <span class="storage-label">Total</span>
+                <span class="storage-value">{formatBytes(storage.total_bytes)}</span>
+              </div>
+            </div>
+            <p class="hint storage-path">Stored at: <code>{storage.path}</code></p>
+          {:else}
+            <p class="empty">Unable to calculate storage usage.</p>
+          {/if}
         </div>
 
       {:else if activeTab === 'about'}
@@ -317,5 +362,46 @@
 
   .info-row span:last-child {
     font-family: var(--font-mono);
+  }
+
+  .storage-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+
+  .storage-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--text-sm);
+  }
+
+  .storage-row:last-child {
+    border-bottom: none;
+  }
+
+  .storage-total {
+    font-weight: 600;
+    border-top: 2px solid var(--color-border);
+    border-bottom: none;
+    padding-top: var(--space-3);
+    margin-top: var(--space-1);
+  }
+
+  .storage-label {
+    color: var(--color-text-secondary);
+  }
+
+  .storage-value {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+  }
+
+  .storage-path {
+    margin-top: var(--space-2);
   }
 </style>

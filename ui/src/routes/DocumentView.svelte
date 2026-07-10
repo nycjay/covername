@@ -24,6 +24,7 @@
   let loading = $state(true);
   let generating = $state(false);
   let error = $state<string | null>(null);
+  let lastOutputPath = $state<string | null>(null);
 
   onMount(() => {
     scanFile();
@@ -67,7 +68,7 @@
     generating = true;
     error = null;
     try {
-      await invoke("generate_output", {
+      const outputPath = await invoke<string>("generate_output", {
         path: filePath,
         replacements: accepted.map((d) => ({
           original: d.matched_text,
@@ -76,11 +77,18 @@
           end: d.end,
         })),
       });
-      // Toast/completion handled by App.svelte event listener
+      // Store output path for reveal action
+      lastOutputPath = outputPath;
     } catch (e) {
       error = String(e);
     } finally {
       generating = false;
+    }
+  }
+
+  async function revealOutput() {
+    if (lastOutputPath) {
+      await invoke("reveal_in_finder", { path: lastOutputPath });
     }
   }
 
@@ -134,11 +142,13 @@
   <DetectionSidebar
     {detections}
     {generating}
+    outputReady={lastOutputPath !== null}
     onAccept={handleAccept}
     onReject={handleReject}
     onEdit={handleEdit}
     onAcceptAll={handleAcceptAll}
     onGenerate={handleGenerate}
+    onReveal={revealOutput}
   />
 </div>
 
