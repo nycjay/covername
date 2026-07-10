@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Build CLI binary for macOS
+  build-cli:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build CLI (release)
+        run: cargo build --release -p covername-cli
+
+      - name: Create tarball
+        run: |
+          cd target/release
+          tar czf covername-cli-aarch64-apple-darwin.tar.gz covername
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: cli-macos
+          path: target/release/covername-cli-aarch64-apple-darwin.tar.gz
+
+  # Build Tauri desktop app for macOS
+  build-tauri:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install frontend dependencies
+        run: cd ui && pnpm install --no-frozen-lockfile
+
+      - name: Build frontend
+        run: cd ui && pnpm run build
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli
+
+      - name: Install Tesseract
+        run: brew install tesseract
+
+      - name: Prepare bundled binaries
+        run: ./scripts/prepare-bundle.sh
+
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          cd crates/covername-tauri
+          npx tauri build --ci
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v5
+        with:
+          name: tauri-macos
+          path: |
+            crates/covername-tauri/target/release/bundle/dmg/*.dmg
+            crates/covername-tauri/target/release/bundle/macos/*.app.tar.gz
+            crates/covername-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+
+  # Create GitHub Release with all artifacts
+  release:
+    needs: [build-cli, build-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: cli-macos
+          path: artifacts/
+
+      - name: Download Tauri artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: tauri-macos
+          path: artifacts/
+
+      - name: Generate latest.json for Tauri updater
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Files in artifacts:"
+          find artifacts -type f
+          SIGNATURE=$(find artifacts -name "*.sig" -exec cat {} \;)
+          TARBALL=$(find artifacts -name "*.app.tar.gz" | head -1)
+          TARBALL_NAME=$(basename "$TARBALL")
+          cat > artifacts/latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Covername ${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${SIGNATURE}",
+                "url": "https://github.com/nycjay/covername/releases/download/v${VERSION}/${TARBALL_NAME}"
+              }
+            }
+          }
+          EOF
+
+      - name: Flatten artifacts for release
+        run: |
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.dmg" -o -name "*.sig" \) -exec cp {} artifacts/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.dmg
+            artifacts/*.sig
+            artifacts/latest.json
