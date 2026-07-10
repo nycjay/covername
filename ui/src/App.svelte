@@ -10,6 +10,7 @@
   import DocumentView from "./routes/DocumentView.svelte";
   import BatchView from "./routes/BatchView.svelte";
   import Settings from "./routes/Settings.svelte";
+  import Onboarding from "./routes/Onboarding.svelte";
   import ProgressBar from "./routes/ProgressBar.svelte";
   import Toast from "./routes/Toast.svelte";
   import logoSvg from "./assets/logo.svg";
@@ -25,6 +26,7 @@
   let batchPaths: string[] | null = $state(null);
   let showSettings = $state(false);
   let showAbout = $state(false);
+  let showOnboarding = $state(false);
 
   // Global progress state
   let progress = $state<ProgressEvent | null>(null);
@@ -119,6 +121,9 @@
         case "open":
           handleOpen();
           break;
+        case "debug_logs":
+          gatherDebugLogs();
+          break;
       }
     });
 
@@ -128,6 +133,11 @@
     // Fetch app version
     invoke<{ version: string }>("get_app_info").then((info) => {
       appVersion = info.version;
+    });
+
+    // Check if first run
+    invoke<boolean>("is_first_run").then((first) => {
+      showOnboarding = first;
     });
 
     return () => {
@@ -181,6 +191,19 @@
       toastVisible = true;
     } finally {
       uninstalling = false;
+    }
+  }
+
+  async function gatherDebugLogs() {
+    try {
+      const path = await invoke<string>("gather_debug_logs");
+      toastMessage = `Debug logs saved to ${path.split('/').pop()}`;
+      toastType = "success";
+      toastVisible = true;
+    } catch (e) {
+      toastMessage = `Failed to gather logs: ${e}`;
+      toastType = "error";
+      toastVisible = true;
     }
   }
 
@@ -340,6 +363,10 @@
   </footer>
 
   <Toast message={toastMessage} type={toastType} visible={toastVisible} onDismiss={() => toastVisible = false} />
+
+  {#if showOnboarding}
+    <Onboarding onComplete={() => showOnboarding = false} />
+  {/if}
 </main>
 
 <style>

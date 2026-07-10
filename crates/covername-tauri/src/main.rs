@@ -503,6 +503,57 @@ fn get_mappings() -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Array(mappings))
 }
 
+/// Return storage usage breakdown for the config directory.
+#[tauri::command]
+fn get_storage_usage() -> Result<serde_json::Value, String> {
+    let storage_dir = Config::ensure_storage_dir().map_err(|e| e.to_string())?;
+
+    let mut config_size: u64 = 0;
+    let mut models_size: u64 = 0;
+    let mut logs_size: u64 = 0;
+
+    if storage_dir.exists() {
+        for entry in walkdir(&storage_dir) {
+            let path = entry.path();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+
+            if path.starts_with(storage_dir.join("models")) {
+                models_size += size;
+            } else if path.starts_with(storage_dir.join("logs")) {
+                logs_size += size;
+            } else {
+                config_size += size;
+            }
+        }
+    }
+
+    let total = config_size + models_size + logs_size;
+
+    Ok(serde_json::json!({
+        "path": storage_dir.display().to_string(),
+        "config_bytes": config_size,
+        "models_bytes": models_size,
+        "logs_bytes": logs_size,
+        "total_bytes": total,
+    }))
+}
+
+/// Walk a directory and yield all file entries.
+fn walkdir(dir: &std::path::Path) -> Vec<std::fs::DirEntry> {
+    let mut entries = Vec::new();
+    if let Ok(read_dir) = std::fs::read_dir(dir) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                entries.extend(walkdir(&path));
+            } else {
+                entries.push(entry);
+            }
+        }
+    }
+    entries
+}
+
 /// Return app version info to the frontend.
 #[tauri::command]
 fn get_app_info() -> serde_json::Value {
@@ -515,6 +566,27 @@ fn get_app_info() -> serde_json::Value {
         "git_hash": git_hash,
         "is_dev": is_dev
     })
+}
+
+/// Check if this is the first time the app has been launched.
+///
+/// Returns true if the config file doesn't exist yet.
+#[tauri::command]
+fn is_first_run() -> bool {
+    Config::config_path()
+        .map(|p| !p.exists())
+        .unwrap_or(true)
+}
+
+/// Mark onboarding as complete by creating the initial config file.
+#[tauri::command]
+fn complete_onboarding() -> Result<(), String> {
+    let config_path = Config::config_path().map_err(|e| e.to_string())?;
+    if !config_path.exists() {
+        let config = Config::default();
+        config.save(&config_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Uninstall Covername: remove config/data, optionally models, and move .app to Trash.
@@ -572,6 +644,104 @@ fn uninstall(remove_models: bool) -> Result<String, String> {
     }
 
     Ok(removed.join("\n"))
+}
+
+/// Gather debug information into a zip file on the Desktop.
+///
+/// Includes: system info, config, log files, model status.
+/// Excludes: mappings (may contain PII), actual document content.
+#[tauri::command]
+fn gather_debug_logs() -> Result<String, String> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    let storage_dir = Config::ensure_storage_dir().map_err(|e| e.to_string())?;
+
+    // Output to Desktop
+    let desktop = dirs::desktop_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let zip_path = desktop.join("covername-debug.zip");
+
+    let file = std::fs::File::create(&zip_path).map_err(|e| e.to_string())?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default();
+
+    // 1. System info
+    let version = env!("CARGO_PKG_VERSION");
+    let sys_info = format!(
+        "covername_version: {}\n\
+         os: {}\n\
+         arch: {}\n\
+         timestamp: {}\n",
+        version,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        chrono::Utc::now().to_rfc3339(),
+    );
+    zip.start_file("system-info.txt", options).map_err(|e| e.to_string())?;
+    zip.write_all(sys_info.as_bytes()).map_err(|e| e.to_string())?;
+
+    // 2. Config file (if exists)
+    let config_path = storage_dir.join("config.json");
+    if config_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&config_path) {
+            zip.start_file("config.json", options).map_err(|e| e.to_string())?;
+            zip.write_all(contents.as_bytes()).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // 3. Log files
+    let logs_dir = storage_dir.join("logs");
+    if logs_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&logs_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let name = format!("logs/{}", path.file_name().unwrap_or_default().to_string_lossy());
+                    if let Ok(contents) = std::fs::read(&path) {
+                        let _ = zip.start_file(&name, options);
+                        let _ = zip.write_all(&contents);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Model status
+    let models_dir = storage_dir.join("models");
+    let mut model_info = String::from("Installed models:\n");
+    if models_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&models_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                model_info.push_str(&format!(
+                    "  {} ({} bytes)\n",
+                    path.file_name().unwrap_or_default().to_string_lossy(),
+                    size
+                ));
+            }
+        }
+    } else {
+        model_info.push_str("  (none)\n");
+    }
+    zip.start_file("models.txt", options).map_err(|e| e.to_string())?;
+    zip.write_all(model_info.as_bytes()).map_err(|e| e.to_string())?;
+
+    // 5. Ignore list (non-sensitive — just entity names the user chose to skip)
+    let ignore_path = storage_dir.join("ignore-list.json");
+    if ignore_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&ignore_path) {
+            zip.start_file("ignore-list.json", options).map_err(|e| e.to_string())?;
+            zip.write_all(contents.as_bytes()).map_err(|e| e.to_string())?;
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+
+    Ok(zip_path.display().to_string())
 }
 
 /// Validate that a file path is safe to process.
@@ -642,12 +812,42 @@ fn main() {
             batch_process,
             list_supported_files,
             uninstall,
+            is_first_run,
+            complete_onboarding,
+            gather_debug_logs,
             get_app_info,
             get_config,
-            get_mappings
+            get_mappings,
+            get_storage_usage
         ])
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+
+            // Initialize file logging
+            {
+                use tracing_appender::rolling;
+                use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+                let log_dir = dirs::home_dir()
+                    .unwrap_or_default()
+                    .join(".config/covername/logs");
+                let file_appender = rolling::daily(&log_dir, "covername.log");
+
+                let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    if cfg!(debug_assertions) {
+                        EnvFilter::new("debug")
+                    } else {
+                        EnvFilter::new("info")
+                    }
+                });
+
+                let _ = tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(fmt::layer().with_writer(file_appender).with_ansi(false))
+                    .try_init();
+            }
+
+            tracing::info!("covername desktop app starting");
 
             if let Some(window) = app.webview_windows().values().next() {
                 let _ = window.set_title(&title);
@@ -655,8 +855,9 @@ fn main() {
 
             // Build native macOS menu
             let about = MenuItemBuilder::with_id("about", "About Covername").build(app)?;
-            let check_update = MenuItemBuilder::with_id("check_update", "Check for Updates…").build(app)?;
-            let uninstall_item = MenuItemBuilder::with_id("uninstall", "Uninstall Covername…").build(app)?;
+            let check_update = MenuItemBuilder::with_id("check_update", "Check for Updates").build(app)?;
+            let debug_logs = MenuItemBuilder::with_id("debug_logs", "Gather Debug Logs").build(app)?;
+            let uninstall_item = MenuItemBuilder::with_id("uninstall", "Uninstall Covername").build(app)?;
 
             let app_menu = SubmenuBuilder::new(app, "Covername")
                 .item(&about)
@@ -688,6 +889,7 @@ fn main() {
             let help_menu = SubmenuBuilder::new(app, "Help")
                 .item(&about)
                 .item(&check_update)
+                .item(&debug_logs)
                 .separator()
                 .item(&uninstall_item)
                 .build()?;
@@ -712,6 +914,9 @@ fn main() {
                     }
                     "uninstall" => {
                         let _ = app_handle.emit("menu-event", "uninstall");
+                    }
+                    "debug_logs" => {
+                        let _ = app_handle.emit("menu-event", "debug_logs");
                     }
                     "open" => {
                         let _ = app_handle.emit("menu-event", "open");
