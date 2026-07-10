@@ -1,0 +1,20 @@
+# Rust build artifacts
+target/
+
+# Downloaded ML models
+models/
+
+# PDF output from processing
+*-covered.pdf
+
+# macOS
+.DS_Store
+
+# Node.js (UI)
+ui/node_modules/
+ui/dist/
+
+# Bundled native binaries (downloaded during build, not tracked in git)
+crates/covername-tauri/lib/
+crates/covername-tauri/bin/
+crates/covername-tauri/tessdata/

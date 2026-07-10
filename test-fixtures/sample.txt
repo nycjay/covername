@@ -1,0 +1,20 @@
+First National Bank
+Account Statement
+
+Name: John Smith
+Account: 4521-8834-2211
+SSN: 123-45-6789
+Phone: (555) 867-5309
+Email: john.smith@firstnational.com
+
+Transaction History:
+07/01 - Transfer to Jane Smith - $500.00
+07/02 - Direct Deposit from Acme Corp - $3,200.00
+07/03 - Payment to City Water Dept - $45.23
+
+Account Balance: $12,456.78
+
+Notes: Please contact John Smith regarding the overdraft protection
+enrollment. His wife Jane Smith should also be added as an authorized
+signer. Their address is 742 Evergreen Terrace and they can be reached
+at the phone number above.

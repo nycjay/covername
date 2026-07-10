@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/covername-core", "crates/covername-cli"]
+exclude = ["crates/covername-tauri"]
+resolver = "2"

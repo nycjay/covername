@@ -1,0 +1,25 @@
+[package]
+name = "covername-cli"
+version = "0.1.0"
+edition = "2024"
+description = "CLI for Covername — local-first document anonymization"
+
+[[bin]]
+name = "covername"
+path = "src/main.rs"
+
+[features]
+default = ["download"]
+download = ["covername-core/download"]
+onnx = ["covername-core/onnx"]
+smart-detection = ["covername-core/smart-detection"]
+
+[dependencies]
+covername-core = { path = "../covername-core" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_json = "1"
+dirs = "6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2"
