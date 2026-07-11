@@ -77,10 +77,16 @@
     updateInstalling = true;
     try {
       const update = await check();
-      if (update) {
-        await update.downloadAndInstall();
-        // App will restart automatically
+      if (!update) {
+        updateInstalling = false;
+        updateAvailable = false;
+        toastMessage = "You're already on the latest version";
+        toastType = "info";
+        toastVisible = true;
+        return;
       }
+      await update.downloadAndInstall();
+      // App will restart automatically
     } catch (e) {
       updateInstalling = false;
       toastMessage = `Update failed: ${e}`;

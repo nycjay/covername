@@ -513,7 +513,7 @@ fn get_storage_usage() -> Result<serde_json::Value, String> {
     let mut logs_size: u64 = 0;
 
     if storage_dir.exists() {
-        for entry in walkdir(&storage_dir) {
+        for entry in walk_dir_entries(&storage_dir) {
             let path = entry.path();
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
 
@@ -539,19 +539,65 @@ fn get_storage_usage() -> Result<serde_json::Value, String> {
 }
 
 /// Walk a directory and yield all file entries.
-fn walkdir(dir: &std::path::Path) -> Vec<std::fs::DirEntry> {
+fn walk_dir_entries(dir: &std::path::Path) -> Vec<std::fs::DirEntry> {
     let mut entries = Vec::new();
     if let Ok(read_dir) = std::fs::read_dir(dir) {
         for entry in read_dir.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                entries.extend(walkdir(&path));
+                entries.extend(walk_dir_entries(&path));
             } else {
                 entries.push(entry);
             }
         }
     }
     entries
+}
+
+/// Check if the ONNX NER model is installed.
+#[tauri::command]
+fn get_model_status() -> serde_json::Value {
+    let storage_dir = Config::ensure_storage_dir().unwrap_or_default();
+    let manager = covername_core::ner::ModelManager::new(&storage_dir);
+    let installed = manager.is_onnx_installed();
+
+    serde_json::json!({
+        "installed": installed,
+        "model_name": "ettin-68m-nemotron-pii",
+        "description": "AI-powered PII detection (96% accuracy, 55 entity types)",
+        "size_mb": 262,
+    })
+}
+
+/// Download the ONNX NER model in the background.
+#[tauri::command]
+async fn download_model(app: tauri::AppHandle) -> Result<(), String> {
+    let result = tokio::task::spawn_blocking(move || {
+        let storage_dir = Config::ensure_storage_dir().map_err(|e| e.to_string())?;
+        let manager = covername_core::ner::ModelManager::new(&storage_dir);
+
+        let _ = app.emit("progress", ProgressEvent {
+            phase: "generate".into(),
+            current: 0,
+            total: 0,
+            message: "Downloading AI model (262 MB)...".into(),
+        });
+
+        manager.download_model().map_err(|e| e.to_string())?;
+
+        let _ = app.emit("progress", ProgressEvent {
+            phase: "complete".into(),
+            current: 1,
+            total: 1,
+            message: "AI model installed successfully".into(),
+        });
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("task failed: {e}"))?;
+
+    result
 }
 
 /// Return app version info to the frontend.
@@ -829,7 +875,9 @@ fn main() {
             get_app_info,
             get_config,
             get_mappings,
-            get_storage_usage
+            get_storage_usage,
+            get_model_status,
+            download_model
         ])
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
@@ -898,7 +946,6 @@ fn main() {
                 .build()?;
 
             let help_menu = SubmenuBuilder::new(app, "Help")
-                .item(&about)
                 .item(&check_update)
                 .item(&debug_logs)
                 .separator()

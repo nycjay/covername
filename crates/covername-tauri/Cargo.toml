@@ -1,6 +1,6 @@
 [package]
 name = "covername-tauri"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 description = "Tauri desktop app for Covername"
 
@@ -8,7 +8,7 @@ description = "Tauri desktop app for Covername"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-covername-core = { path = "../covername-core" }
+covername-core = { path = "../covername-core", features = ["onnx", "download"] }
 chrono = "0.4"
 dirs = "6"
 tauri = { version = "2", features = [] }

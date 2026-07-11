@@ -89,7 +89,7 @@ Chosen for:
 
 ### NER Model
 
-- **Model**: A pre-trained NER model exported to ONNX format (e.g., a distilled BERT fine-tuned on PII detection, or the spaCy `en_core_web_trf` equivalent)
+- **Model**: A pre-trained NER model exported to ONNX format (ettin-68m-nemotron-pii, 96% F1, MIT license)
 - **Size**: ~100-500MB on disk
 - **Runtime**: ONNX Runtime (`ort` crate) — loads model into memory only during processing
 - **Entities detected**: PERSON, ADDRESS, PHONE, EMAIL, SSN, ACCOUNT_NUMBER, DATE_OF_BIRTH, ORGANIZATION (when contextually PII)
@@ -373,7 +373,7 @@ The user can always override the suggestion. Once confirmed, the mapping is stor
 - [x] Image file support (PNG, JPEG, TIFF)
 - [x] PDF OCR fallback (if text extraction yields <50 chars, tries OCR)
 - [x] XLSX read (calamine) + write (rust_xlsxwriter) with cell-level replacement
-- [x] Real ONNX model download from HuggingFace (barflyman/bert-pii-detect-onnx)
+- [x] Real ONNX model download from HuggingFace (kalyan-ks/ettin-68m-nemotron-pii)
 
 ### Phase 3: Desktop App (Tauri) ✅ COMPLETE
 
@@ -538,7 +538,7 @@ covername/
 
 ## Open Questions
 
-1. **~~Which pre-trained NER model?~~** DECIDED: Using `barflyman/bert-pii-detect-onnx` (~416MB, BERT-base). See NER Model Selection below.
+1. **~~Which pre-trained NER model?~~** DECIDED: Using `kalyan-ks/ettin-68m-nemotron-pii` (~416MB, BERT-base). See NER Model Selection below.
 2. **~~PDF library choice~~** DECIDED: Using `pdf-extract` + `lopdf` for reading, `pdfium-render` for rasterization, and position-aware redaction via hOCR bounding boxes in `redact.rs`. Position-aware PDF redaction IS implemented.
 3. **~~Font handling in PDF output~~** RESOLVED: Using `imageproc` + `ab_glyph` for text rendering on rasterized pages.
 4. **Scanned PDF quality**: OCR accuracy varies greatly with scan quality. May need preprocessing (deskew, contrast adjustment) before OCR.
@@ -547,15 +547,17 @@ covername/
 
 ## NER Model Selection
 
-### Current: `barflyman/bert-pii-detect-onnx`
+### Current: `kalyan-ks/ettin-68m-nemotron-pii`
 
-- **Source**: https://huggingface.co/barflyman/bert-pii-detect-onnx
-- **Size**: ~416MB (ONNX model) + 725KB (tokenizer)
-- **Base**: BERT-base-uncased, fine-tuned on ai4privacy/pii-masking-300k
-- **Labels**: 55 (27 entity types × BIO + O)
-- **Entity types**: GIVENNAME, LASTNAME, EMAIL, TEL, STREET, CITY, STATE, POSTCODE, SOCIALNUMBER, DATE, PASSPORT, DRIVERLICENSE, IDCARD, IP, USERNAME, PASS, and more
-- **License**: Apache 2.0
-- **Why switched from beki/en_spacy_pii_distilbert**: That model is a spaCy package (Python wheel), not a raw ONNX file. barflyman's model ships as ready-to-use ONNX with tokenizer.json.
+- **Source**: https://huggingface.co/kalyan-ks/ettin-68m-nemotron-pii
+- **Size**: ~262MB (ONNX model) + 3.4MB (tokenizer)
+- **Base**: Ettin-encoder-68m (ModernBERT architecture), fine-tuned on nvidia/Nemotron-PII
+- **Labels**: 107 (55 entity types × BIO + O)
+- **Entity types**: first_name, last_name, street_address, city, state, postcode, ssn, phone_number, email, account_number, credit_debit_card, date_of_birth, company_name, and 42 more
+- **F1 score**: 96.27% (beats GPT-4o-mini at PII extraction)
+- **License**: MIT
+- **Download**: Hosted on GitHub Releases (model-ettin-68m-pii-v1 tag)
+- **Why switched from barflyman/bert-pii-detect-onnx**: The ettin model is smaller (262MB vs 430MB), significantly more accurate (96% vs unknown), detects 55 entity types (vs ~10), and is MIT licensed.
 
 ### Detection strategy (three layers)
 
@@ -563,15 +565,16 @@ covername/
 |-------|----------------|-------------------|
 | **Regex rules** | SSN, phone, email, credit card, account numbers | Yes (built-in) |
 | **Dictionary NER** | Person names (capitalized word heuristic), addresses | Yes (no model needed) |
-| **ONNX model** | Address components, dates, credentials, structured PII | Only with `--features onnx` + model downloaded |
+| **ONNX model** | Names, addresses, dates, credentials, IDs, organizations, 55+ types | Only with `--features onnx` + model downloaded |
 
-### Alternatives to evaluate later
+### Alternatives evaluated
 
-| Model | Size | Best for | Link |
-|-------|------|----------|------|
-| **beki/en_spacy_pii_distilbert** | ~260MB | Broad PII (requires ONNX export from spaCy) | https://huggingface.co/beki/en_spacy_pii_distilbert |
-| **StanfordAIMI/stanford-deidentifier-base** | ~500MB | Medical/clinical documents (HIPAA) | https://huggingface.co/StanfordAIMI/stanford-deidentifier-base |
-| **dslim/bert-base-NER** | ~430MB | General entity recognition, strong PERSON detection | https://huggingface.co/dslim/bert-base-NER |
+| Model | Size | F1 | Best for | Link |
+|-------|------|-----|----------|------|
+| **kalyan-ks/ettin-68m-nemotron-pii** | 262MB | 96% | General PII (CURRENT) | https://huggingface.co/kalyan-ks/ettin-68m-nemotron-pii |
+| **kalyan-ks/ettin-17m-nemotron-pii** | ~70MB | 94% | Lightweight/mobile | https://huggingface.co/kalyan-ks/ettin-17m-nemotron-pii |
+| **StanfordAIMI/stanford-deidentifier-base** | ~500MB | — | Medical/clinical (HIPAA) | https://huggingface.co/StanfordAIMI/stanford-deidentifier-base |
+| **dslim/bert-base-NER** | ~262MB | General entity recognition, strong PERSON detection | https://huggingface.co/dslim/bert-base-NER |
 | **lakshyakh93/deberta_finetuned_pii** | ~800MB | Kaggle PII competition winner, high accuracy | https://huggingface.co/lakshyakh93/deberta_finetuned_pii |
 
 ### Switching models

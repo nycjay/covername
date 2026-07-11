@@ -13,6 +13,7 @@
     detections: Detection[];
     generating?: boolean;
     outputReady?: boolean;
+    modelInstalled?: boolean;
     onAccept: (index: number) => void;
     onReject: (index: number) => void;
     onEdit: (index: number, replacement: string) => void;
@@ -21,7 +22,7 @@
     onReveal?: () => void;
   }
 
-  let { detections, generating = false, outputReady = false, onAccept, onReject, onEdit, onAcceptAll, onGenerate, onReveal }: Props = $props();
+  let { detections, generating = false, outputReady = false, modelInstalled = true, onAccept, onReject, onEdit, onAcceptAll, onGenerate, onReveal }: Props = $props();
   let editingIndex = $state<number | null>(null);
   let editValue = $state("");
 
@@ -128,6 +129,9 @@
       <button class="btn-reveal" onclick={onReveal}>
         Reveal in Finder
       </button>
+    {/if}
+    {#if !modelInstalled}
+      <p class="model-nudge">Improve detection accuracy — install the AI model in Settings.</p>
     {/if}
   </div>
 </aside>
@@ -308,5 +312,14 @@
     background: var(--color-primary-500);
     color: white;
     border-color: var(--color-primary-500);
+  }
+
+  .model-nudge {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-top: var(--space-3);
+    padding: var(--space-2);
+    border-top: 1px solid var(--color-border);
   }
 </style>

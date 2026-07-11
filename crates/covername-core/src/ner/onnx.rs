@@ -1,7 +1,7 @@
-//! ONNX-based named entity detector using a `DistilBERT` PII model.
+//! ONNX-based named entity detector for PII detection.
 //!
 //! This module provides high-accuracy NER detection by running inference
-//! on a pre-trained transformer model (e.g., `beki/en_spacy_pii_distilbert`).
+//! on a pre-trained transformer model (ettin-68m-nemotron-pii, 96% F1).
 //! It uses the ONNX Runtime for efficient model execution and `HuggingFace`
 //! tokenizers for text encoding.
 //!
@@ -28,6 +28,7 @@ pub struct OnnxDetector {
     session: UnsafeCell<Session>,
     tokenizer: Tokenizer,
     label_map: Vec<String>,
+    needs_token_type_ids: bool,
 }
 
 // SAFETY: Session is internally thread-safe via ONNX Runtime's locking.
@@ -102,10 +103,17 @@ impl OnnxDetector {
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })?;
 
+        // Check if this model expects token_type_ids (BERT-style) or not (ModernBERT/Ettin)
+        let needs_token_type_ids = session
+            .inputs()
+            .iter()
+            .any(|input| input.name() == "token_type_ids");
+
         Ok(Self {
             session: UnsafeCell::new(session),
             tokenizer,
             label_map,
+            needs_token_type_ids,
         })
     }
 
@@ -115,35 +123,50 @@ impl OnnxDetector {
             .strip_prefix("B-")
             .or_else(|| label.strip_prefix("I-"))?;
 
-        Some(match entity {
-            // Person names
+        match entity {
+            // Person names — always PII
             "PER" | "PERSON" | "GIVENNAME1" | "GIVENNAME2" | "LASTNAME1" | "LASTNAME2"
-            | "LASTNAME3" => "PERSON",
-            // Email addresses
-            "EMAIL" => "EMAIL",
-            // Phone numbers
-            "TEL" => "PHONE",
-            // Physical addresses
-            "LOC" | "LOCATION" | "GPE" | "STREET" | "CITY" | "STATE" | "POSTCODE"
-            | "SECADDRESS" | "BUILDING" | "COUNTRY" | "GEOCOORD" => "ADDRESS",
-            // Social security / national ID numbers
-            "SOCIALNUMBER" => "SSN",
-            // Dates
-            "DATE" | "TIME" | "BOD" => "DATE",
-            // Identity documents
-            "PASSPORT" | "DRIVERLICENSE" | "IDCARD" => "ID_DOCUMENT",
-            // IP addresses
-            "IP" => "IP_ADDRESS",
-            // Credentials
-            "PASS" | "USERNAME" => "CREDENTIAL",
-            // Organizations
-            "ORG" | "ORGANIZATION" | "NORP" => "ORGANIZATION",
-            // Other numeric types
-            "CARDINAL" | "QUANTITY" => "NUMBER",
-            "MONEY" => "MONEY",
-            // Everything else (SEX, TITLE, unknown labels)
-            _ => "OTHER",
-        })
+            | "LASTNAME3" | "first_name" | "last_name" => Some("PERSON"),
+            // Email addresses — always PII
+            "EMAIL" | "email" => Some("EMAIL"),
+            // Phone numbers — always PII
+            "TEL" | "phone_number" | "fax_number" => Some("PHONE"),
+            // Street addresses — PII (but not just city/state/country alone)
+            "STREET" | "SECADDRESS" | "BUILDING" | "street_address" => Some("ADDRESS"),
+            // Social security / national ID numbers — always PII
+            "SOCIALNUMBER" | "ssn" | "national_id" | "tax_id" => Some("SSN"),
+            // Financial account numbers — PII
+            "account_number"
+            | "bank_routing_number"
+            | "credit_debit_card"
+            | "cvv"
+            | "swift_bic" => Some("ACCOUNT"),
+            // Date of birth — PII (but not generic dates)
+            "date_of_birth" | "BOD" => Some("DATE"),
+            // Identity documents — PII
+            "PASSPORT"
+            | "DRIVERLICENSE"
+            | "IDCARD"
+            | "certificate_license_number"
+            | "license_plate"
+            | "vehicle_identifier" => Some("ID_DOCUMENT"),
+            // IP / network addresses — PII
+            "IP" | "ipv4" | "ipv6" | "mac_address" => Some("IP_ADDRESS"),
+            // Credentials / secrets — PII
+            "PASS" | "USERNAME" | "password" | "pin" | "api_key" | "http_cookie" | "user_name" => {
+                Some("CREDENTIAL")
+            }
+            // Medical identifiers — PII
+            "health_plan_beneficiary_number" | "medical_record_number" | "biometric_identifier" => {
+                Some("MEDICAL")
+            }
+            // Customer/employee IDs — PII
+            "customer_id" | "employee_id" => Some("ID"),
+
+            // Everything else is NOT PII (organizations, locations, dates,
+            // demographics, urls, numbers, etc.) — skip
+            _ => None,
+        }
     }
 
     /// Check if a label starts a new entity (B- prefix).
@@ -249,9 +272,42 @@ impl OnnxDetector {
         }
 
         let matched_text = &text[entity.start..entity.end];
+        let trimmed = matched_text.trim();
 
-        if matched_text.trim().is_empty() {
+        if trimmed.is_empty() {
             return None;
+        }
+
+        // Reject subword fragments: short detections are tokenizer noise
+        let min_length = match entity_type {
+            "PERSON" | "ADDRESS" | "EMAIL" => 5,
+            "PHONE" => 7,
+            "SSN" => 9,
+            "ACCOUNT" => 4,
+            _ => 2,
+        };
+        if trimmed.len() < min_length {
+            return None;
+        }
+
+        // For PERSON detections, must look like a real name:
+        // - Starts with uppercase
+        // - Either contains a space (full name) or is properly capitalized (Title Case or ALL CAPS)
+        if entity_type == "PERSON" {
+            let first_char = trimmed.chars().next().unwrap_or(' ');
+            if !first_char.is_uppercase() {
+                return None;
+            }
+            // Single-word names must be either Title Case ("Jason") or ALL CAPS ("JASON")
+            if !trimmed.contains(' ') {
+                let is_title_case = trimmed.chars().skip(1).all(char::is_lowercase);
+                let is_all_caps = trimmed
+                    .chars()
+                    .all(|c| c.is_uppercase() || !c.is_alphabetic());
+                if !is_title_case && !is_all_caps {
+                    return None;
+                }
+            }
         }
 
         let context = Self::extract_context(text, entity.start, entity.end);
@@ -259,7 +315,7 @@ impl OnnxDetector {
         Some(Detection {
             matched_text: matched_text.to_string(),
             entity_type: entity_type.to_string(),
-            rule_name: String::from("NER (ONNX - PII DistilBERT)"),
+            rule_name: String::from("NER (ONNX)"),
             start: entity.start,
             end: entity.end,
             context,
@@ -295,6 +351,7 @@ struct EntitySpan {
 }
 
 impl NerDetector for OnnxDetector {
+    #[allow(clippy::too_many_lines)]
     fn detect(&self, text: &str) -> Vec<Detection> {
         if text.is_empty() {
             return Vec::new();
@@ -372,15 +429,30 @@ impl NerDetector for OnnxDetector {
         // SAFETY: We have exclusive logical access through &self. The UnsafeCell
         // is necessary because Session::run requires &mut self for Rust's borrow
         // checker, but ONNX Runtime handles concurrency internally.
-        let outputs = match unsafe { &mut *self.session.get() }.run(ort::inputs![
-            "input_ids" => input_ids_tensor,
-            "attention_mask" => attention_mask_tensor,
-            "token_type_ids" => token_type_ids_tensor,
-        ]) {
-            Ok(outputs) => outputs,
-            Err(e) => {
-                eprintln!("Warning: ONNX inference failed: {e}");
-                return Vec::new();
+        let session = unsafe { &mut *self.session.get() };
+
+        let outputs = if self.needs_token_type_ids {
+            match session.run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor,
+                "token_type_ids" => token_type_ids_tensor,
+            ]) {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("Warning: ONNX inference failed: {e}");
+                    return Vec::new();
+                }
+            }
+        } else {
+            match session.run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor,
+            ]) {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("Warning: ONNX inference failed: {e}");
+                    return Vec::new();
+                }
             }
         };
 
@@ -413,7 +485,7 @@ impl NerDetector for OnnxDetector {
     }
 
     fn name(&self) -> &'static str {
-        "NER (ONNX - PII DistilBERT)"
+        "NER (ONNX)"
     }
 
     fn is_ready(&self) -> bool {
@@ -437,21 +509,17 @@ mod tests {
 
     #[test]
     fn test_label_to_entity_type_location() {
-        assert_eq!(OnnxDetector::label_to_entity_type("B-LOC"), Some("ADDRESS"));
-        assert_eq!(OnnxDetector::label_to_entity_type("I-LOC"), Some("ADDRESS"));
-        assert_eq!(OnnxDetector::label_to_entity_type("B-GPE"), Some("ADDRESS"));
+        // LOC/GPE are filtered out (not PII on their own)
+        assert_eq!(OnnxDetector::label_to_entity_type("B-LOC"), None);
+        assert_eq!(OnnxDetector::label_to_entity_type("I-LOC"), None);
+        assert_eq!(OnnxDetector::label_to_entity_type("B-GPE"), None);
     }
 
     #[test]
     fn test_label_to_entity_type_org() {
-        assert_eq!(
-            OnnxDetector::label_to_entity_type("B-ORG"),
-            Some("ORGANIZATION")
-        );
-        assert_eq!(
-            OnnxDetector::label_to_entity_type("I-ORG"),
-            Some("ORGANIZATION")
-        );
+        // ORG is filtered out (not personal PII)
+        assert_eq!(OnnxDetector::label_to_entity_type("B-ORG"), None);
+        assert_eq!(OnnxDetector::label_to_entity_type("I-ORG"), None);
     }
 
     #[test]
@@ -530,11 +598,10 @@ mod tests {
 
         let detections = decode_entities_standalone(text, &predicted_labels, &offsets, &label_map);
 
-        assert_eq!(detections.len(), 2);
+        // LOC is filtered (not PII), so only PERSON remains
+        assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].matched_text, "John Smith");
         assert_eq!(detections[0].entity_type, "PERSON");
-        assert_eq!(detections[1].matched_text, "New York");
-        assert_eq!(detections[1].entity_type, "ADDRESS");
     }
 
     #[test]

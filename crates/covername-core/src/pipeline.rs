@@ -163,10 +163,18 @@ pub fn detect_pii(text: &str, storage_dir: &Path) -> Result<Vec<Detection>> {
         if manager.is_onnx_installed() {
             match crate::ner::OnnxDetector::load(&manager.model_dir()) {
                 Ok(detector) => {
-                    let ner_detections = detector.detect(text);
-                    detections.extend(ner_detections);
+                    let onnx_detections = detector.detect(text);
+                    detections.extend(onnx_detections);
+                    // Also run dictionary detector for ALL CAPS names and other patterns
+                    // that the ONNX model's subword tokenizer may miss
+                    let dict_ner = DictionaryDetector::new();
+                    detections.extend(dict_ner.detect(text));
                     let merged = processor::merge_detections(detections);
-                    info!(count = merged.len(), "PII detection complete (ONNX)");
+                    let merged = expand_person_detections(text, merged);
+                    info!(
+                        count = merged.len(),
+                        "PII detection complete (ONNX + dictionary)"
+                    );
                     return Ok(merged);
                 }
                 Err(e) => {
@@ -185,8 +193,76 @@ pub fn detect_pii(text: &str, storage_dir: &Path) -> Result<Vec<Detection>> {
 
     // Merge overlapping detections
     let merged = processor::merge_detections(detections);
+
+    // Global name matching: if a name is detected anywhere, find ALL occurrences
+    // in the text. This ensures "John Smith" on page 2 gets replaced even if
+    // it's only detected as PII on page 1.
+    let merged = expand_person_detections(text, merged);
+
     info!(count = merged.len(), "PII detection complete");
     Ok(merged)
+}
+
+/// Expand PERSON detections to cover all occurrences of the same name in the text.
+///
+/// If "JOHN SMITH" is detected at one position, this also adds detections
+/// for every other occurrence of "John Smith", "JOHN SMITH", etc.
+/// (case-insensitive) throughout the document.
+fn expand_person_detections(text: &str, detections: Vec<Detection>) -> Vec<Detection> {
+    use crate::utils::extract_context;
+
+    let mut person_names: Vec<String> = detections
+        .iter()
+        .filter(|d| d.entity_type == "PERSON")
+        .map(|d| d.matched_text.trim().to_string())
+        .collect();
+    person_names.sort();
+    person_names.dedup();
+
+    if person_names.is_empty() {
+        return detections;
+    }
+
+    let mut extra_detections = Vec::new();
+    let text_lower = text.to_lowercase();
+
+    for name in &person_names {
+        let name_lower = name.to_lowercase();
+        let mut search_start = 0;
+
+        while let Some(pos) = text_lower[search_start..].find(&name_lower) {
+            let abs_pos = search_start + pos;
+            let end_pos = abs_pos + name.len();
+
+            // Skip if this position is already covered by an existing detection
+            let already_covered = detections
+                .iter()
+                .any(|d| d.start <= abs_pos && d.end >= end_pos);
+
+            if !already_covered {
+                let matched = &text[abs_pos..end_pos];
+                let context = extract_context(text, abs_pos, end_pos);
+                extra_detections.push(Detection {
+                    matched_text: matched.to_string(),
+                    entity_type: String::from("PERSON"),
+                    rule_name: String::from("Global match"),
+                    start: abs_pos,
+                    end: end_pos,
+                    context,
+                });
+            }
+
+            search_start = abs_pos + 1;
+        }
+    }
+
+    if extra_detections.is_empty() {
+        return detections;
+    }
+
+    let mut all = detections;
+    all.extend(extra_detections);
+    processor::merge_detections(all)
 }
 
 /// Scan a file for PII: extract text, detect, and filter through ignore list.

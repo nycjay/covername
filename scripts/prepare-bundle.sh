@@ -58,6 +58,9 @@ if [ ! -f "$TAURI_DIR/bin/tesseract" ]; then
     # Training data
     cp "$TESS_PREFIX/share/tessdata/eng.traineddata" "$TAURI_DIR/tessdata/"
 
+    # Config files (needed for hocr output mode)
+    cp -r "$TESS_PREFIX/share/tessdata/configs" "$TAURI_DIR/tessdata/"
+
     echo "  ✓ Tesseract + dependencies"
 else
     echo "  ✓ Tesseract (already present)"

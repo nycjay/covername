@@ -229,7 +229,7 @@ Step 10 (polish) ✅
 - Stdio server (launched on demand, no background process)
 
 ### Ongoing Improvements
-- [ ] Improve ONNX model PERSON detection (evaluate dslim/bert-base-NER)
+- [ ] [x] Upgraded ONNX model to ettin-68m-nemotron-pii (96% F1, 55 entity types)
 - [ ] PDF output fidelity (preserve layout/fonts instead of plain-text-in-PDF)
 - [ ] More regex rules (date-of-birth, passport, driver's license patterns)
 - [ ] Real-world testing with actual financial/health documents
@@ -253,7 +253,7 @@ Step 10 (polish) ✅
 
 ### Uninstall / Cleanup
 - [ ] **Uninstall models** — `covername model remove-all` or Settings → "Remove downloaded models"
-  - Removes NER model (~430MB)
+  - Removes NER model (~262MB)
   - Removes SLM model (~1-2GB) when added
   - Keeps config/mappings/ignore list intact
 - [x] **Full uninstall** — Help → About → "Uninstall Covername…"
@@ -261,9 +261,9 @@ Step 10 (polish) ✅
   - Option B: Remove everything (~1 GB including models)
   - Moves .app to Trash via Finder (user can undo)
   - Confirmation step with clear description of what will be removed
-- [ ] **Storage usage display** — Settings → "Storage" shows disk usage:
+- [x] **Storage usage display** — Settings → "Storage" shows disk usage:
   - Config/mappings: X KB
-  - NER model: 430 MB
+  - NER model: ~262 MB
   - SLM model: 1.5 GB
   - Logs: X MB
   - Total: X.X GB

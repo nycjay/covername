@@ -1121,7 +1121,7 @@ fn handle_model(action: ModelAction) -> Result<()> {
             println!("{}", model_dir.display());
         }
         ModelAction::Download => {
-            eprintln!("Downloading PII detection model (barflyman/bert-pii-detect-onnx)...");
+            eprintln!("Downloading PII detection model (ettin-68m-nemotron-pii)...");
             manager
                 .download_model()
                 .context("failed to download model")?;

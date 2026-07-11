@@ -125,12 +125,14 @@ impl ModelManager {
             source,
         })?;
 
-        let base_url = "https://huggingface.co/barflyman/bert-pii-detect-onnx/resolve/main";
+        let base_url =
+            "https://github.com/nycjay/covername/releases/download/model-ettin-68m-pii-v1";
 
         let files = [
-            (format!("{base_url}/onnx/model.onnx"), "model.onnx"),
+            (format!("{base_url}/model.onnx"), "model.onnx"),
+            (format!("{base_url}/model.onnx.data"), "model.onnx.data"),
             (format!("{base_url}/tokenizer.json"), "tokenizer.json"),
-            (format!("{base_url}/config.json"), "config.json"),
+            (format!("{base_url}/labels.json"), "labels.json"),
         ];
 
         for (url, filename) in &files {
@@ -138,15 +140,12 @@ impl ModelManager {
             crate::utils::download_file(url, &file_path, filename)?;
         }
 
-        // Generate labels.json from config.json
-        Self::generate_labels_from_config(&model_dir)?;
-
         // Write manifest
         let manifest = serde_json::json!({
-            "version": "1.0.0",
+            "version": "2.0.0",
             "type": "onnx",
-            "model": "barflyman/bert-pii-detect-onnx",
-            "source": "https://huggingface.co/barflyman/bert-pii-detect-onnx"
+            "model": "kalyan-ks/ettin-68m-nemotron-pii",
+            "source": "https://huggingface.co/kalyan-ks/ettin-68m-nemotron-pii"
         });
         let manifest_path = model_dir.join("manifest.json");
         let manifest_json = serde_json::to_string_pretty(&manifest)?;
@@ -176,39 +175,6 @@ impl ModelManager {
         })
     }
 
-    /// Generate `labels.json` from the model's `config.json` id2label mapping.
-    #[cfg(feature = "download")]
-    fn generate_labels_from_config(model_dir: &Path) -> Result<()> {
-        let config_path = model_dir.join("config.json");
-        let config_contents = fs::read_to_string(&config_path).map_err(|source| Error::Io {
-            path: config_path,
-            source,
-        })?;
-        let config: serde_json::Value = serde_json::from_str(&config_contents)?;
-
-        if let Some(id2label) = config.get("id2label").and_then(|v| v.as_object()) {
-            let mut labels: Vec<(usize, String)> = id2label
-                .iter()
-                .filter_map(|(k, v)| {
-                    let idx = k.parse::<usize>().ok()?;
-                    let label = v.as_str()?.to_string();
-                    Some((idx, label))
-                })
-                .collect();
-            labels.sort_by_key(|(idx, _)| *idx);
-            let label_list: Vec<String> = labels.into_iter().map(|(_, label)| label).collect();
-
-            let labels_path = model_dir.join("labels.json");
-            let labels_json = serde_json::to_string_pretty(&label_list)?;
-            fs::write(&labels_path, &labels_json).map_err(|source| Error::Io {
-                path: labels_path,
-                source,
-            })?;
-        }
-
-        Ok(())
-    }
-
     /// Remove the ONNX model files from the model directory.
     ///
     /// Removes `model.onnx`, `tokenizer.json`, and `labels.json` if they exist.
@@ -220,7 +186,12 @@ impl ModelManager {
     pub fn remove_model(&self) -> Result<()> {
         let model_dir = self.model_dir();
 
-        let files_to_remove = ["model.onnx", "tokenizer.json", "labels.json"];
+        let files_to_remove = [
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+            "labels.json",
+        ];
 
         for file_name in &files_to_remove {
             let file_path = model_dir.join(file_name);

@@ -13,6 +13,8 @@
   let activeTab = $state<"config" | "mappings" | "rules" | "storage" | "about">("config");
   let appInfo = $state<{ version: string; git_hash: string; is_dev: boolean } | null>(null);
   let storage = $state<{ path: string; config_bytes: number; models_bytes: number; logs_bytes: number; total_bytes: number } | null>(null);
+  let modelStatus = $state<{ installed: boolean; model_name: string; description: string; size_mb: number } | null>(null);
+  let downloading = $state(false);
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -43,7 +45,25 @@
     } catch {
       storage = null;
     }
+    try {
+      modelStatus = await invoke("get_model_status");
+    } catch {
+      modelStatus = null;
+    }
   });
+
+  async function handleDownloadModel() {
+    downloading = true;
+    try {
+      await invoke("download_model");
+      modelStatus = await invoke("get_model_status");
+      storage = await invoke("get_storage_usage");
+    } catch (e) {
+      // Error shown via toast from progress events
+    } finally {
+      downloading = false;
+    }
+  }
 </script>
 
 <div class="settings-overlay" role="presentation">
@@ -138,6 +158,21 @@
             <p class="hint storage-path">Stored at: <code>{storage.path}</code></p>
           {:else}
             <p class="empty">Unable to calculate storage usage.</p>
+          {/if}
+
+          {#if modelStatus}
+            <div class="model-section">
+              <h3>AI Detection Model</h3>
+              {#if modelStatus.installed}
+                <p class="model-status model-installed">Installed — {modelStatus.description}</p>
+              {:else}
+                <p class="model-status">{modelStatus.description}</p>
+                <p class="hint">Improves detection accuracy from ~80% to 96%. Detects names, dates, and 50+ more entity types that regex alone misses.</p>
+                <button class="btn-download-model" onclick={handleDownloadModel} disabled={downloading}>
+                  {downloading ? "Downloading..." : `Download Model (~${modelStatus.size_mb} MB)`}
+                </button>
+              {/if}
+            </div>
           {/if}
         </div>
 
@@ -403,5 +438,49 @@
 
   .storage-path {
     margin-top: var(--space-2);
+  }
+
+  .model-section {
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .model-section h3 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+  }
+
+  .model-status {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  .model-installed {
+    color: var(--color-success);
+  }
+
+  .btn-download-model {
+    background: var(--color-primary-500);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: var(--space-2);
+    transition: background 0.15s;
+  }
+
+  .btn-download-model:hover:not(:disabled) {
+    background: var(--color-primary-600);
+  }
+
+  .btn-download-model:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

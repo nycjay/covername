@@ -25,9 +25,13 @@
   let generating = $state(false);
   let error = $state<string | null>(null);
   let lastOutputPath = $state<string | null>(null);
+  let modelInstalled = $state(true);
 
   onMount(() => {
     scanFile();
+    invoke<{ installed: boolean }>("get_model_status").then((s) => {
+      modelInstalled = s.installed;
+    });
   });
 
   async function scanFile() {
@@ -143,6 +147,7 @@
     {detections}
     {generating}
     outputReady={lastOutputPath !== null}
+    {modelInstalled}
     onAccept={handleAccept}
     onReject={handleReject}
     onEdit={handleEdit}

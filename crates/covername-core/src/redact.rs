@@ -409,11 +409,23 @@ fn apply_replacements_to_image(
                 // Draw replacement text if we have a font
                 if let Some(ref font) = font {
                     // Use the average height of individual matched words as font size
-                    // (not the total bbox height, which spans multiple lines)
                     let matched_words = &words[i..i + original_words.len()];
                     let word_count = u32::try_from(matched_words.len()).unwrap_or(1).max(1);
                     let avg_word_h = matched_words.iter().map(|w| w.h).sum::<u32>() / word_count;
-                    let font_scale = avg_word_h as f32 * 0.85;
+                    let mut font_scale = avg_word_h as f32 * 0.85;
+
+                    // Scale down font if replacement text is wider than the available space
+                    let available_width = bbox_w as f32;
+                    let char_width_estimate = font_scale * 0.55; // approximate character width at this scale
+                    let text_width_estimate =
+                        replacement.replacement.len() as f32 * char_width_estimate;
+                    if text_width_estimate > available_width && available_width > 0.0 {
+                        let scale_factor = available_width / text_width_estimate;
+                        font_scale *= scale_factor;
+                        // Don't go below a readable minimum (8px equivalent at 300 DPI)
+                        font_scale = font_scale.max(24.0);
+                    }
+
                     draw_text_mut(
                         img,
                         black,

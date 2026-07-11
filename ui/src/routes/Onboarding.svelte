@@ -8,11 +8,14 @@
 
   let { onComplete }: Props = $props();
   let step = $state(0);
+  let modelDownloading = $state(false);
+  let modelInstalled = $state(false);
 
   const steps = [
     { id: "welcome" },
     { id: "how-it-works" },
     { id: "privacy" },
+    { id: "model" },
     { id: "ready" },
   ];
 
@@ -31,6 +34,18 @@
 
   function skip() {
     finish();
+  }
+
+  async function downloadModel() {
+    modelDownloading = true;
+    try {
+      await invoke("download_model");
+      modelInstalled = true;
+    } catch {
+      // Will still work without model
+    } finally {
+      modelDownloading = false;
+    }
   }
 </script>
 
@@ -85,6 +100,24 @@
           <p><strong>Easy to remove.</strong> Help → Uninstall removes everything cleanly.</p>
         </div>
       </div>
+
+    {:else if steps[step].id === "model"}
+      <h2>Enhanced Detection (Optional)</h2>
+      <p class="wizard-desc">
+        Download a small AI model to significantly improve PII detection accuracy.
+      </p>
+      <div class="model-info">
+        <div class="model-detail"><strong>Size:</strong> ~262 MB (one-time download)</div>
+        <div class="model-detail"><strong>Benefit:</strong> 96% accuracy, detects names, dates, and 50+ entity types</div>
+        <div class="model-detail"><strong>Without it:</strong> Regex patterns still catch SSN, phone, email, and addresses</div>
+      </div>
+      {#if modelInstalled}
+        <p class="model-done">Model installed.</p>
+      {:else}
+        <button class="btn-download-onboarding" onclick={downloadModel} disabled={modelDownloading}>
+          {modelDownloading ? "Downloading..." : "Download AI Model"}
+        </button>
+      {/if}
 
     {:else if steps[step].id === "ready"}
       <h2>You're all set!</h2>
@@ -303,6 +336,47 @@
 
   .btn-next:hover {
     background: var(--color-primary-600);
+  }
+
+  .model-info {
+    text-align: left;
+    margin: var(--space-4) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .model-detail {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .model-done {
+    color: var(--color-success);
+    font-weight: 500;
+    margin-top: var(--space-4);
+  }
+
+  .btn-download-onboarding {
+    background: var(--color-primary-500);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-6);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: var(--space-4);
+    transition: background 0.15s;
+  }
+
+  .btn-download-onboarding:hover:not(:disabled) {
+    background: var(--color-primary-600);
+  }
+
+  .btn-download-onboarding:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .btn-skip {

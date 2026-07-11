@@ -198,7 +198,6 @@ Phase 3 (Desktop app) — complete:
 
 Remaining:
 - [ ] MCP server for AI agent integration
-- [ ] Auto-updater
 
 ## AI Agent Integration
 
