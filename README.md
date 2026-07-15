@@ -36,7 +36,7 @@
 
 Download the latest `.dmg` from [Releases](https://github.com/nycjay/covername/releases), open it, and drag Covername to Applications. No other tools required.
 
-> **First launch**: macOS will warn about an unidentified developer. Right-click → Open → click "Open". You only need to do this once.
+> **First launch**: macOS will block the app since it's not notarized. Go to **System Settings → Privacy & Security**, scroll down, and click **"Open Anyway"** next to the Covername message. You only need to do this once.
 
 ### CLI (via Homebrew)
 
